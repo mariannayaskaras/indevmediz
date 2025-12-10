@@ -22,6 +22,14 @@ import {
   TooltipContent,
   TooltipTrigger
 } from '@/components/ui/tooltip'
+import { Mic } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import {
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem
+} from '@/components/ui/sidebar'
 
 type SessionHistoryItem = {
   id: string
@@ -111,6 +119,7 @@ function SidebarHeaderContent({
 export function AppSidebar({ history: _history, selectedThread: _selectedThread, onSelectSession: _onSelectSession, onSelectSymptom }: AppSidebarProps) {
   const { sidebarUser, isLoadingSidebar } = useUser()
   const { t } = useTranslation()
+  const router = useRouter()
   
   // Debug temporário
   console.log('[AppSidebar] 🔄 Render - isLoadingSidebar:', isLoadingSidebar, 'sidebarUser:', sidebarUser ? {
@@ -158,6 +167,29 @@ export function AppSidebar({ history: _history, selectedThread: _selectedThread,
       <SidebarContent>
         <NavOptions options={sidebarOptions} />
         <NavFolders onSelectSymptom={onSelectSymptom} />
+        
+        {/* Botão meATENDE */}
+        <SidebarGroup>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarMenuButton
+                    onClick={() => router.push('/chat/meatende')}
+                    className="w-full justify-start gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md hover:shadow-lg transition-all duration-200"
+                  >
+                    <Mic className="h-4 w-4" />
+                    <span className="group-data-[collapsed=true]:hidden">🎙️ meATENDE</span>
+                  </SidebarMenuButton>
+                </TooltipTrigger>
+                <TooltipContent side="right" hidden={true}>
+                  <p>meATENDE - Agente de Voz</p>
+                </TooltipContent>
+              </Tooltip>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+        
         {/*
           Quando quiser renderizar o histórico de sessões:
           descomente abaixo e passe as props corretas para o componente NavHistory,

@@ -132,6 +132,7 @@ export function NavFolders({ onSelectSymptom }: NavFoldersProps) {
   const [editingFolderNotes, setEditingFolderNotes] = useState<string | null>(null)
   const [editingNotes, setEditingNotes] = useState('')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
+  const [showAllFolders, setShowAllFolders] = useState(false) // Controla se mostra todas as pastas
   const [_activeId, setActiveId] = useState<UniqueIdentifier | null>(null)
   const [draggedItem, setDraggedItem] = useState<DraggedItem | null>(null)
   
@@ -422,6 +423,11 @@ export function NavFolders({ onSelectSymptom }: NavFoldersProps) {
 
       if (process.env.NODE_ENV !== 'production') console.log('[NavFolders] Renderizando', folders.length)
   
+  // Determina quais pastas mostrar (5 primeiras ou todas)
+  const MAX_VISIBLE_FOLDERS = 5
+  const visibleFolders = showAllFolders ? folders : folders.slice(0, MAX_VISIBLE_FOLDERS)
+  const hasMoreFolders = folders.length > MAX_VISIBLE_FOLDERS
+  
   return (
     <DndContext
       sensors={sensors}
@@ -534,7 +540,8 @@ export function NavFolders({ onSelectSymptom }: NavFoldersProps) {
               </div>
             </SidebarMenuItem>
           ) : (
-            folders.map(folder => (
+            <>
+              {visibleFolders.map(folder => (
               <SidebarMenuItem key={folder.id} className="group">
                 <div className="flex items-center w-full gap-1">
                   <SidebarMenuButton
@@ -698,7 +705,30 @@ export function NavFolders({ onSelectSymptom }: NavFoldersProps) {
                   </SidebarMenuSub>
                 )}
               </SidebarMenuItem>
-            ))
+              ))}
+              
+              {/* Botão para expandir/colapsar pastas */}
+              {hasMoreFolders && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => setShowAllFolders(!showAllFolders)}
+                    className="w-full justify-center text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors"
+                  >
+                    {showAllFolders ? (
+                      <>
+                        <X className="h-4 w-4 mr-2" />
+                        Mostrar menos
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Ver todas ({folders.length - MAX_VISIBLE_FOLDERS} mais)
+                      </>
+                    )}
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+            </>
           )}
         </SidebarMenu>
 

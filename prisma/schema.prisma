@@ -37,6 +37,8 @@ model User {
   sessions                Session[]
   subscriptions           Subscription[]
   symptomFolders          SymptomFolder[]
+  credits                 UserCredits?
+  audioSessions           AudioSession[]
 
   @@index([mensagem_enviada])
   @@index([status_verificacao])
@@ -243,6 +245,56 @@ model n8n_chat_histories {
   message    Json
 }
 
+model UserCredits {
+  id        String            @id @default(uuid())
+  userId    String            @unique
+  balance   Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions CreditTransaction[]
+
+  @@index([userId])
+}
+
+model CreditTransaction {
+  id          String       @id @default(uuid())
+  creditsId   String
+  amount      Int
+  type        TransactionType
+  description String?
+  createdAt   DateTime     @default(now())
+  credits     UserCredits  @relation(fields: [creditsId], references: [id], onDelete: Cascade)
+
+  @@index([creditsId])
+  @@index([createdAt])
+}
+
+model AudioSession {
+  id        String          @id @default(uuid())
+  userId    String
+  threadId  String?         @unique
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AudioMessage[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model AudioMessage {
+  id            String          @id @default(uuid())
+  sessionId     String
+  role          ChatMessageRole
+  audioUrl      String?
+  transcript    String?
+  createdAt     DateTime        @default(now())
+  session       AudioSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
 enum AppUsage {
   PERSONAL
   PROFESSIONAL
@@ -284,4 +336,11 @@ enum AdminRequestStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum TransactionType {
+  PURCHASE
+  USAGE
+  REFUND
+  BONUS
 }
