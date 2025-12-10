@@ -138,7 +138,21 @@ function buildSyntheticSubId(p: HotmartPayload): string {
 
 type Periodicity = 'month' | 'year'
 
-function inferPeriodicity(p: HotmartPayload): Periodicity {
+type PeriodicityResult = {
+  value: Periodicity
+  reason: string
+}
+
+function buildPeriodicityResult(
+  value: Periodicity,
+  reason: string,
+  extra?: Record<string, unknown>
+): PeriodicityResult {
+  log(`✅ Periodicidade inferida: ${value.toUpperCase()} (${reason})`, extra)
+  return { value, reason }
+}
+
+function inferPeriodicity(p: HotmartPayload): PeriodicityResult {
   // Log detalhado para debug
   const offer = p.data.purchase.offer?.code?.toLowerCase()
   const offerName = p.data.purchase.offer?.name?.toLowerCase()
@@ -161,12 +175,14 @@ function inferPeriodicity(p: HotmartPayload): Periodicity {
     const yearlyKeywords = ['anual', 'annual', 'y', 'year', 'y01', 'y-', '_y', 'ano', 'yearly']
     
     if (monthlyKeywords.some(s => offer.includes(s))) {
-      log('✅ Periodicidade inferida: MONTH (via offer code)')
-      return 'month'
+      return buildPeriodicityResult('month', 'offer code keywords', {
+        offer
+      })
     }
     if (yearlyKeywords.some(s => offer.includes(s))) {
-      log('✅ Periodicidade inferida: YEAR (via offer code)')
-      return 'year'
+      return buildPeriodicityResult('year', 'offer code keywords', {
+        offer
+      })
     }
   }
 
@@ -176,12 +192,14 @@ function inferPeriodicity(p: HotmartPayload): Periodicity {
     const yearlyKeywords = ['anual', 'annual', 'ano', 'yearly']
     
     if (monthlyKeywords.some(s => offerDescription.includes(s))) {
-      log('✅ Periodicidade inferida: MONTH (via offer description)')
-      return 'month'
+      return buildPeriodicityResult('month', 'offer description keywords', {
+        offerDescription
+      })
     }
     if (yearlyKeywords.some(s => offerDescription.includes(s))) {
-      log('✅ Periodicidade inferida: YEAR (via offer description)')
-      return 'year'
+      return buildPeriodicityResult('year', 'offer description keywords', {
+        offerDescription
+      })
     }
   }
 
@@ -191,12 +209,14 @@ function inferPeriodicity(p: HotmartPayload): Periodicity {
     const yearlyKeywords = ['anual', 'annual', 'ano', 'yearly']
     
     if (monthlyKeywords.some(s => subscriptionPlanName.includes(s))) {
-      log('✅ Periodicidade inferida: MONTH (via subscription plan name)')
-      return 'month'
+      return buildPeriodicityResult('month', 'subscription plan name keywords', {
+        subscriptionPlanName
+      })
     }
     if (yearlyKeywords.some(s => subscriptionPlanName.includes(s))) {
-      log('✅ Periodicidade inferida: YEAR (via subscription plan name)')
-      return 'year'
+      return buildPeriodicityResult('year', 'subscription plan name keywords', {
+        subscriptionPlanName
+      })
     }
   }
 
@@ -206,12 +226,14 @@ function inferPeriodicity(p: HotmartPayload): Periodicity {
     const yearlyKeywords = ['anual', 'annual', 'ano', 'yearly']
     
     if (monthlyKeywords.some(s => offerName.includes(s))) {
-      log('✅ Periodicidade inferida: MONTH (via offer name)')
-      return 'month'
+      return buildPeriodicityResult('month', 'offer name keywords', {
+        offerName
+      })
     }
     if (yearlyKeywords.some(s => offerName.includes(s))) {
-      log('✅ Periodicidade inferida: YEAR (via offer name)')
-      return 'year'
+      return buildPeriodicityResult('year', 'offer name keywords', {
+        offerName
+      })
     }
   }
 
@@ -219,12 +241,14 @@ function inferPeriodicity(p: HotmartPayload): Periodicity {
   const productName = p.data.product?.name?.toLowerCase()
   if (productName) {
     if (productName.includes('anual') || productName.includes('annual') || productName.includes('yearly')) {
-      log('✅ Periodicidade inferida: YEAR (via product name)')
-      return 'year'
+      return buildPeriodicityResult('year', 'product name keywords', {
+        productName
+      })
     }
     if (productName.includes('mensal') || productName.includes('monthly')) {
-      log('✅ Periodicidade inferida: MONTH (via product name)')
-      return 'month'
+      return buildPeriodicityResult('month', 'product name keywords', {
+        productName
+      })
     }
   }
 
@@ -236,19 +260,23 @@ function inferPeriodicity(p: HotmartPayload): Periodicity {
   // IMPORTANTE: value está em reais, não centavos! No payload exemplo: 39.9 = R$ 39,90
   const valueInCents = Math.round(value * 100) // Converter para centavos se necessário
   if (valueInCents >= 15000) { // R$ 150.00 ou mais = provavelmente anual
-      log(`✅ Periodicidade inferida: YEAR (via price value ${value} = ${valueInCents} cents >= 15000)`)
-      return 'year'
+      return buildPeriodicityResult('year', 'price threshold', {
+        value,
+        valueInCents
+      })
   }
   
   // Valores muito pequenos (menos de R$ 50) são provavelmente mensais
   if (valueInCents < 5000) {
-      log(`✅ Periodicidade inferida: MONTH (via price value ${value} = ${valueInCents} cents < 5000)`)
-      return 'month'
+      return buildPeriodicityResult('month', 'price threshold', {
+        value,
+        valueInCents
+      })
   }
   
   // Por padrão, assumir mensal se não conseguir inferir
   log('⚠️ Não foi possível inferir periodicidade, usando padrão: MONTH')
-  return 'month'
+  return { value: 'month', reason: 'fallback default' }
 }
 
 function addMonths(date: Date, n: number): Date {
@@ -392,126 +420,206 @@ export async function POST(req: NextRequest) {
     log('✅ Produto correto (Mediz)')
 
     // 3) Periodicidade → plano
-    const periodicity = inferPeriodicity(parsed)
-    log('Periodicidade inferida:', periodicity)
+    const periodicityResult = inferPeriodicity(parsed)
+    const periodicity = periodicityResult.value
+    log('Periodicidade inferida:', { periodicity, reason: periodicityResult.reason })
     log('Dados usados para inferência:', {
       offerCode: parsed.data.purchase.offer?.code,
       priceValue: parsed.data.purchase.price.value
     })
 
-    // ⚠️ IMPORTANTE: O offer.code do Hotmart (ex: "jcuheq2m") é um código interno da Hotmart
-    // e NÃO corresponde aos stripePriceId dos nossos planos no banco.
+    // ⚠️ IMPORTANTE: O webhook da Hotmart traz o ID do plano em subscription.plan.id
+    // Este é o identificador mais confiável e deve ser usado como fonte única de verdade
     // 
-    // APENAS 2 planos válidos no banco:
-    // - price_hotmart_mensal (mensal)
-    // - price_hotmart_anual (anual)
-    //
-    // ESTRATÉGIA: Inferir periodicidade pelo subscription.plan.name e buscar pelo código correspondente
+    // ESTRATÉGIA: Usar APENAS hotmartId (ID numérico) como fonte de verdade
+    // Se não encontrar por hotmartId, retornar erro ao invés de usar fallbacks que podem causar erros
     
     let plan = null
-    const offerCode = parsed.data.purchase.offer?.code
+    const hotmartPlanIdRaw = parsed.data.subscription?.plan?.id
+    const offerCode = parsed.data.purchase.offer?.code // Apenas para logs
     
     log('📋 Informações do payload:', {
+      hotmartPlanIdRaw: hotmartPlanIdRaw || 'não disponível',
       offerCode: offerCode || 'não disponível',
       subscriptionPlanName: parsed.data.subscription?.plan?.name,
-      subscriptionPlanId: parsed.data.subscription?.plan?.id,
-      priceValue: parsed.data.purchase.price.value
+      priceValue: parsed.data.purchase.price.value,
+      currency: parsed.data.purchase.price.currency_value || 'não disponível',
+      // Log completo do subscription.plan para debug
+      subscriptionPlan: parsed.data.subscription?.plan ? {
+        id: parsed.data.subscription.plan.id,
+        name: parsed.data.subscription.plan.name,
+        // Outros campos que possam existir
+      } : 'não disponível',
+      // Log completo do purchase.offer para debug
+      purchaseOffer: parsed.data.purchase.offer ? {
+        code: parsed.data.purchase.offer.code,
+        name: parsed.data.purchase.offer.name,
+        description: parsed.data.purchase.offer.description
+      } : 'não disponível'
     })
 
-    // PRIORIDADE 1: Buscar plano por periodicidade + códigos conhecidos dos 4 planos
-    // A periodicidade já foi inferida acima pela função inferPeriodicity()
+    // Obter moeda do payload para validação
+    const currencyFromPayload = parsed.data.purchase.price.currency_value
     
-    // ⚠️ APENAS 2 planos válidos: price_hotmart_mensal e price_hotmart_anual
-    const monthlyCodes = ['price_hotmart_mensal']
-    const yearlyCodes = ['price_hotmart_anual']
-    
-    const codesToTry = periodicity === 'year' ? yearlyCodes : monthlyCodes
-
-    log('🔍 Buscando plano por periodicidade:', {
-      periodicity,
-      codesToTry,
-      monthlyCodes,
-      yearlyCodes,
-      subscriptionPlanName: parsed.data.subscription?.plan?.name
-    })
-
-    // Tentar buscar plano por qualquer um dos códigos da periodicidade
-    // Ordem: primeiro tenta variável de ambiente, depois os códigos fixos
-    for (const code of codesToTry) {
-      plan = await prisma.plan.findUnique({
-        where: { stripePriceId: code }
-      })
-      if (plan) {
-        log(`✅ Plano encontrado: ${code} -> ${plan.name} (${plan.interval})`)
-        break
-      } else {
-        log(`   ⏭️ Código ${code} não encontrado no banco`)
-      }
-    }
-
-    // PRIORIDADE 2: Se ainda não encontrou, buscar planos por intervalo
-    // mas priorizar apenas os 2 códigos conhecidos
-    if (!plan) {
-      log('⚠️ Nenhum plano encontrado pelos códigos conhecidos, buscando por intervalo...')
-      const plansByInterval = await prisma.plan.findMany({
-        where: {
-          interval: periodicity === 'year' ? 'YEAR' : 'MONTH',
-          active: true
-        },
-        orderBy: { createdAt: 'desc' }
-      })
-      
-      if (plansByInterval.length > 0) {
-        // Priorizar planos que tenham códigos conhecidos (os 2 planos válidos)
-        const preferredPlan = plansByInterval.find(p => 
-          codesToTry.includes(p.stripePriceId)
-        )
-        
-        if (preferredPlan) {
-          plan = preferredPlan
-          log(`✅ Plano encontrado por intervalo com código conhecido: ${plan.stripePriceId} (${plan.name})`)
-        } else {
-          // Se não encontrou nenhum dos códigos conhecidos, avisar e pegar o primeiro
-          plan = plansByInterval[0]
-          log(`⚠️ ATENÇÃO: Nenhum dos 2 planos conhecidos encontrado!`)
-          log(`⚠️ Códigos procurados: ${codesToTry.join(', ')}`)
-          log(`⚠️ Usando primeiro plano do intervalo: ${plan.stripePriceId} (${plan.name})`)
-          log(`⚠️ Total de planos no intervalo ${periodicity}: ${plansByInterval.length}`)
-          log(`⚠️ Todos os planos disponíveis: ${plansByInterval.map(p => `${p.stripePriceId} (${p.name})`).join(', ')}`)
-        }
-      }
-    }
-    
-    // PRIORIDADE 3: Se ainda não encontrou, erro crítico
-    if (!plan) {
-      const allPlans = await prisma.plan.findMany({
-        select: { stripePriceId: true, name: true, interval: true, active: true }
-      })
-      
-      logError('❌ Plano Hotmart não encontrado no DB', undefined, '[hotmart]', {
-        periodicity,
-        codesToTry,
-        monthlyCodes,
-        yearlyCodes,
-        offerCode,
-        availablePlans: allPlans.map(p => ({
-          stripePriceId: p.stripePriceId,
-          name: p.name,
-          interval: p.interval,
-          active: p.active
-        }))
+    // ⚠️ FONTE ÚNICA DE VERDADE: Buscar plano APENAS por hotmartId
+    if (!hotmartPlanIdRaw) {
+      logError('❌ ERRO CRÍTICO: hotmartId não encontrado no payload!', undefined, '[hotmart]', {
+        subscriptionData: parsed.data.subscription,
+        purchaseData: parsed.data.purchase
       })
       return NextResponse.json(
-        { error: 'Plan not found', periodicity, codesToTry, received: true },
+        { 
+          error: 'hotmartId missing in payload', 
+          received: true 
+        },
         { status: 200 } // Retorna 200 para evitar retry desnecessário
       )
     }
+    
+    // ⚠️ NORMALIZAÇÃO: Converter hotmartId para número inteiro
+    // O webhook pode enviar como string com pontuação (ex: "1.115.304")
+    // Precisamos remover a pontuação e converter para número (1115304)
+    let hotmartPlanId: number
+    try {
+      if (typeof hotmartPlanIdRaw === 'number') {
+        hotmartPlanId = hotmartPlanIdRaw
+      } else if (typeof hotmartPlanIdRaw === 'string') {
+        // Remover todos os caracteres não numéricos (pontos, vírgulas, etc)
+        const cleanedId = String(hotmartPlanIdRaw).replace(/[^\d]/g, '')
+        hotmartPlanId = parseInt(cleanedId, 10)
+        
+        if (isNaN(hotmartPlanId)) {
+          throw new Error(`Não foi possível converter hotmartId para número: ${hotmartPlanIdRaw}`)
+        }
+        
+        log('🔄 [NORMALIZAÇÃO] hotmartId normalizado:', {
+          original: hotmartPlanIdRaw,
+          normalizado: hotmartPlanId,
+          tipoOriginal: typeof hotmartPlanIdRaw
+        })
+      } else {
+        throw new Error(`Tipo de hotmartId não suportado: ${typeof hotmartPlanIdRaw}`)
+      }
+    } catch (normalizationError) {
+      logError('❌ ERRO ao normalizar hotmartId:', normalizationError, '[hotmart]', {
+        hotmartPlanIdRaw,
+        tipo: typeof hotmartPlanIdRaw
+      })
+      return NextResponse.json(
+        { 
+          error: 'Invalid hotmartId format', 
+          hotmartId: hotmartPlanIdRaw,
+          received: true 
+        },
+        { status: 200 }
+      )
+    }
+    
+    // Buscar plano por hotmartId normalizado (fonte única de verdade)
+    plan = await prisma.plan.findUnique({
+      where: { hotmartId: hotmartPlanId }
+    })
+    
+    if (!plan) {
+      logError('❌ ERRO CRÍTICO: Plano não encontrado no banco pelo hotmartId!', undefined, '[hotmart]', {
+        hotmartIdOriginal: hotmartPlanIdRaw,
+        hotmartIdNormalizado: hotmartPlanId,
+        offerCode: offerCode,
+        subscriptionPlanName: parsed.data.subscription?.plan?.name
+      })
+      logError('💡 Execute: npm run sync-hotmart-plans para sincronizar os planos', undefined, '[hotmart]')
+      return NextResponse.json(
+        { 
+          error: 'Plan not found by hotmartId', 
+          hotmartIdOriginal: hotmartPlanIdRaw,
+          hotmartIdNormalizado: hotmartPlanId,
+          received: true 
+        },
+        { status: 200 } // Retorna 200 para evitar retry desnecessário
+      )
+    }
+    
+    log(`✅ Plano encontrado por hotmartId: ${hotmartPlanId} (original: ${hotmartPlanIdRaw}) -> ${plan.name} (${plan.interval})`)
+    
+    // 🔍 DEBUG: Comparar nome do payload com nome no banco
+    const planNameFromPayload = parsed.data.subscription?.plan?.name
+    log('🔍 [DEBUG] Comparação de nomes:', {
+      nomeNoBanco: plan.name,
+      nomeNoPayload: planNameFromPayload || 'não disponível',
+      saoIguais: planNameFromPayload ? plan.name === planNameFromPayload : 'não comparável'
+    })
+    
+    // ⚠️ ATUALIZAÇÃO AUTOMÁTICA: Se o nome do payload for diferente do nome no banco, atualizar
+    if (planNameFromPayload && planNameFromPayload.trim() !== '' && plan.name !== planNameFromPayload) {
+      log('🔄 [ATUALIZAÇÃO] Nome do plano diferente detectado. Atualizando nome no banco...', {
+        nomeAntigo: plan.name,
+        nomeNovo: planNameFromPayload,
+        hotmartId: hotmartPlanId
+      })
+      
+      try {
+        plan = await prisma.plan.update({
+          where: { id: plan.id },
+          data: { name: planNameFromPayload }
+        })
+        log('✅ [ATUALIZAÇÃO] Nome do plano atualizado com sucesso:', {
+          id: plan.id,
+          nomeAtualizado: plan.name
+        })
+      } catch (updateError) {
+        logError('❌ [ATUALIZAÇÃO] Erro ao atualizar nome do plano:', updateError, '[hotmart]', {
+          planId: plan.id,
+          nomeTentado: planNameFromPayload
+        })
+        // Não falhar o webhook por causa disso, apenas logar o erro
+      }
+    }
+    
+    // ⚠️ VALIDAÇÃO CRÍTICA: Verificar se a moeda corresponde
+    // 🔍 DEBUG: Log detalhado da moeda antes da validação
+    log('🔍 [DEBUG] Validação de moeda:', {
+      moedaPayload: currencyFromPayload || 'não disponível',
+      moedaPlano: plan.currency || 'não definida',
+      hotmartId: hotmartPlanId,
+      nomePlano: plan.name,
+      priceValue: parsed.data.purchase.price.value,
+      offerCode: offerCode || 'não disponível'
+    })
+    
+    if (currencyFromPayload && plan.currency && 
+        plan.currency.toUpperCase() !== currencyFromPayload.toUpperCase()) {
+      logError('🚨 ERRO CRÍTICO: Plano encontrado por hotmartId tem moeda diferente do payload!', undefined, '[hotmart]', {
+        hotmartId: hotmartPlanId,
+        moedaPayload: currencyFromPayload,
+        moedaPlano: plan.currency,
+        planoNome: plan.name,
+        planoId: plan.id,
+        priceValue: parsed.data.purchase.price.value,
+        offerCode: offerCode || 'não disponível',
+        subscriptionPlanName: parsed.data.subscription?.plan?.name,
+        // Log completo do payload para debug
+        payloadData: {
+          subscription: parsed.data.subscription,
+          purchase: parsed.data.purchase
+        }
+      })
+      // ⚠️ IMPORTANTE: Não rejeitar o webhook, apenas logar o erro
+      // Isso permite que o webhook continue sendo processado mesmo com inconsistência de moeda
+      // O problema pode ser na Hotmart enviando dados incorretos
+      logError('⚠️ Continuando processamento apesar da inconsistência de moeda...', undefined, '[hotmart]')
+    }
+
+    // ⚠️ NOTA: Removidos todos os fallbacks. Agora usamos APENAS hotmartId como fonte de verdade.
+    // Se o plano não foi encontrado acima, já retornamos erro.
     
     log('✅ Plano encontrado:', { 
       id: plan.id, 
       name: plan.name, 
       interval: plan.interval,
       stripePriceId: plan.stripePriceId,
+      currency: plan.currency || 'NÃO DEFINIDA',
+      hotmartId: plan.hotmartId || 'NÃO DEFINIDO',
+      hotmartOfferKey: plan.hotmartOfferKey || 'NÃO DEFINIDO',
       periodicityInferida: periodicity
     })
     
@@ -554,7 +662,44 @@ export async function POST(req: NextRequest) {
 
     // 5) Subscrição (idempotente por transaction)
     const syntheticId = buildSyntheticSubId(parsed)
-    log('Subscription ID sintético:', syntheticId)
+    const transactionId = parsed.data.purchase.transaction || parsed.id
+    log('🔍 DEBUG: Informações da transação:', {
+      transactionId,
+      syntheticId,
+      event: parsed.event,
+      purchaseStatus: parsed.data.purchase?.status,
+      subscriptionId: parsed.data.subscription?.id
+    })
+
+    // 🔍 DEBUG: Verificar se já existe assinatura com este syntheticId
+    const existingBySyntheticId = await prisma.subscription.findUnique({
+      where: { stripeSubscriptionId: syntheticId }
+    })
+    log('🔍 DEBUG: Assinatura existente por syntheticId:', {
+      encontrada: !!existingBySyntheticId,
+      id: existingBySyntheticId?.id,
+      status: existingBySyntheticId?.status,
+      currentPeriodEnd: existingBySyntheticId?.currentPeriodEnd?.toISOString()
+    })
+
+    // 🔍 DEBUG: Verificar assinaturas existentes do usuário
+    const existingSubscriptions = await prisma.subscription.findMany({
+      where: {
+        userId: user.id,
+        stripeSubscriptionId: { startsWith: 'hotmart_' }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+    log('🔍 DEBUG: Assinaturas existentes do usuário:', {
+      total: existingSubscriptions.length,
+      detalhes: existingSubscriptions.map(sub => ({
+        id: sub.id,
+        syntheticId: sub.stripeSubscriptionId,
+        status: sub.status,
+        currentPeriodEnd: sub.currentPeriodEnd.toISOString(),
+        createdAt: sub.createdAt.toISOString()
+      }))
+    })
 
     const now = new Date()
     const start = now
@@ -567,33 +712,108 @@ export async function POST(req: NextRequest) {
       periodo: `${start.toISOString()} até ${end.toISOString()}`
     })
 
-    const subscription = await prisma.subscription.upsert({
-      where: { stripeSubscriptionId: syntheticId },
-      create: {
-        userId: user.id,
-        planId: plan.id,
-        stripeSubscriptionId: syntheticId,
-        status: 'active',
-        currentPeriodStart: start,
-        currentPeriodEnd: end
-      },
-      update: {
-        status: 'active',
-        currentPeriodStart: start,
-        currentPeriodEnd: end
+    // 🎯 ESTRATÉGIA: Se já existe assinatura com este syntheticId, atualizar
+    // Caso contrário, verificar se é renovação (usuário já tem assinatura ativa/expirada)
+    let subscription
+    let isRenewal = false
+
+    if (existingBySyntheticId) {
+      // Caso 1: Assinatura com mesmo syntheticId existe (idempotência)
+      log('✅ Assinatura existente encontrada por syntheticId, atualizando...')
+      subscription = await prisma.subscription.update({
+        where: { id: existingBySyntheticId.id },
+        data: {
+          status: 'active',
+          currentPeriodStart: start,
+          currentPeriodEnd: end
+        }
+      })
+      log('✅ Assinatura atualizada:', { id: subscription.id })
+    } else {
+      // Caso 2: Verificar se é renovação (usuário já tem assinatura Hotmart)
+      // Considera renovação se:
+      // - Status ativo, OU
+      // - Status não cancelado e expirou recentemente (últimos 90 dias para cobrir anuais)
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+      const existingActiveOrRecent = existingSubscriptions.find(sub => {
+        const isActive = sub.status === 'active' || sub.status === 'ACTIVE'
+        const isNotCanceled = sub.status !== 'canceled' && sub.status !== 'CANCELED'
+        const expiredRecently = sub.currentPeriodEnd >= ninetyDaysAgo
+        return isActive || (isNotCanceled && expiredRecently)
+      })
+
+      if (existingActiveOrRecent) {
+        // É uma renovação - atualizar a assinatura existente
+        isRenewal = true
+        log('🔄 RENOVAÇÃO DETECTADA: Assinatura existente encontrada, atualizando ao invés de criar nova')
+        log('📋 Detalhes da assinatura existente:', {
+          id: existingActiveOrRecent.id,
+          syntheticIdAntigo: existingActiveOrRecent.stripeSubscriptionId,
+          statusAntigo: existingActiveOrRecent.status,
+          syntheticIdNovo: syntheticId
+        })
+
+        // Atualizar a assinatura existente com novos dados
+        subscription = await prisma.subscription.update({
+          where: { id: existingActiveOrRecent.id },
+          data: {
+            stripeSubscriptionId: syntheticId, // Atualizar com novo transaction ID
+            status: 'active',
+            currentPeriodStart: start,
+            currentPeriodEnd: end,
+            planId: plan.id // Atualizar plano caso tenha mudado
+          }
+        })
+        log('✅ Assinatura renovada/atualizada:', { id: subscription.id })
+
+        // Cancelar outras assinaturas ativas do mesmo usuário (evitar duplicatas)
+        const otherActiveSubs = existingSubscriptions.filter(sub => 
+          sub.id !== existingActiveOrRecent.id && 
+          (sub.status === 'active' || sub.status === 'ACTIVE')
+        )
+        
+        if (otherActiveSubs.length > 0) {
+          log(`⚠️ Cancelando ${otherActiveSubs.length} assinatura(s) duplicada(s) do usuário`)
+          await prisma.subscription.updateMany({
+            where: {
+              id: { in: otherActiveSubs.map(s => s.id) }
+            },
+            data: {
+              status: 'canceled'
+            }
+          })
+          log('✅ Assinaturas duplicadas canceladas')
+        }
+      } else {
+        // Caso 3: Nova assinatura (primeira compra)
+        log('🆕 NOVA ASSINATURA: Criando nova assinatura para o usuário')
+        subscription = await prisma.subscription.create({
+          data: {
+            userId: user.id,
+            planId: plan.id,
+            stripeSubscriptionId: syntheticId,
+            status: 'active',
+            currentPeriodStart: start,
+            currentPeriodEnd: end
+          }
+        })
+        log('✅ Nova assinatura criada:', { id: subscription.id })
       }
-    })
+    }
 
     const duration = Date.now() - startTime
     log('✅✅✅ WEBHOOK PROCESSADO COM SUCESSO ✅✅✅')
     log('Subscription ID:', subscription.id)
+    log('Tipo de operação:', isRenewal ? 'RENOVAÇÃO' : 'NOVA ASSINATURA')
     log('Tempo total:', `${duration}ms`)
     log('==========================================')
 
     return NextResponse.json({ 
       received: true, 
       success: true,
-      subscriptionId: subscription.id 
+      subscriptionId: subscription.id,
+      isRenewal,
+      action: isRenewal ? 'renewed' : 'created'
     })
 
   } catch (err) {
